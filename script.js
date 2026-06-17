@@ -16,16 +16,62 @@ document.querySelectorAll("[data-copy-target]").forEach((button) => {
   });
 });
 
+const videos = Array.from(document.querySelectorAll("video"));
+const visibleVideos = new Map();
+const MAX_ACTIVE_VIDEOS = 5;
+
 const prepareVideo = (video) => {
   video.muted = true;
-  video.autoplay = true;
-  video.loop = true;
   video.playsInline = true;
+  video.preload = "metadata";
+  video.removeAttribute("loop");
+  video.removeAttribute("autoplay");
   video.setAttribute("muted", "");
-  video.setAttribute("autoplay", "");
-  video.setAttribute("loop", "");
   video.setAttribute("playsinline", "");
-  video.play().catch(() => {});
 };
 
-document.querySelectorAll("video").forEach(prepareVideo);
+const syncVideoPlayback = () => {
+  const activeVideos = Array.from(visibleVideos.entries())
+    .filter(([, ratio]) => ratio >= 0.3)
+    .sort(([firstVideo, firstRatio], [secondVideo, secondRatio]) => {
+      if (secondRatio !== firstRatio) return secondRatio - firstRatio;
+      return firstVideo.getBoundingClientRect().top - secondVideo.getBoundingClientRect().top;
+    })
+    .slice(0, MAX_ACTIVE_VIDEOS)
+    .map(([video]) => video);
+
+  videos.forEach((video) => {
+    if (activeVideos.includes(video)) {
+      if (!video.ended && video.paused) {
+        video.play().catch(() => {});
+      }
+      return;
+    }
+
+    if (!video.paused) {
+      video.pause();
+    }
+  });
+};
+
+const videoObserver = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        visibleVideos.set(entry.target, entry.intersectionRatio);
+      } else {
+        visibleVideos.delete(entry.target);
+      }
+    });
+
+    syncVideoPlayback();
+  },
+  {
+    threshold: [0, 0.3, 0.6, 0.9],
+  }
+);
+
+videos.forEach((video) => {
+  prepareVideo(video);
+  videoObserver.observe(video);
+});
